@@ -1,0 +1,4 @@
+interface:
+  display_name: "AITestHub 本地 UI 执行"
+  short_description: "领取平台已审 UI 范围，以本地 AI 和 Ego 执行并完整回传结果"
+  default_prompt: "使用 $ath-web-execute 执行指定 AITestHub 已批准 UI 计划，保存真实观察并将结果回传原运行。"

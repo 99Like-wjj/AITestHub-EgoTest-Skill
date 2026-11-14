@@ -1,0 +1,1 @@
+The self-contained Node ESM bundles include Zod 4.6.7 (MIT), copyright Colin McDonnell. Its full license is in zod/LICENSE. esbuild 0.28.2 and TypeScript 6.0.3 are build tools and are not runtime dependencies. Platform JSON Schemas are derived from AITestHub MIT sources; contracts/provenance.json records their source hashes.

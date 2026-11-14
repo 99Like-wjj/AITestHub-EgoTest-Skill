@@ -1,0 +1,62 @@
+{
+  "id": "ath-web-execute",
+  "version": "0.2.1",
+  "license": "MIT",
+  "runtime": {
+    "node": "24.19.0",
+    "entry": "scripts/runtime/index.mjs",
+    "types": "scripts/runtime/index.d.mts",
+    "commandExport": "runV2LocalCommand",
+    "diagnostics": "scripts/tool.mjs"
+  },
+  "hostPrincipal": "verified-current-actor-and-platform-origin",
+  "contractArtifactId": "ae7aca39-90be-4630-9b36-c5abcab63cfe",
+  "legacyFactSchemaArtifactId": "ba61508f-642a-49a6-b909-5cd81c4bde0e",
+  "compatibleSchemaVersions": [
+    "ath.execution-scope.v1",
+    "ath.result-batch.v2",
+    "ath.ui-delivery.v2"
+  ],
+  "mcpProtocolVersion": "2026-07-28",
+  "contractValidation": "vendored-structural-plus-local-cross-field-checks",
+  "requiredPorts": [
+    "ToolPort",
+    "ResultPort",
+    "WorkspacePort",
+    "FileChannelPort"
+  ],
+  "credentialProvider": "trusted-common-host-only",
+  "execution": {
+    "planner": "current-local-ai",
+    "browser": "installed-ego-primitives",
+    "defaultConcurrency": 1,
+    "prewrittenClickStepsRequired": false
+  },
+  "implemented": [
+    "version-isolated-approved-scope-journal",
+    "claim-outbox-recovery",
+    "action-intent-and-unknown-markers",
+    "observations-and-evidence-index",
+    "bounded-evidence-batch-planner",
+    "descriptor-and-reference-segments",
+    "explicit-end-resume-and-cumulative-seal",
+    "readonly-original-batch-and-command-recovery",
+    "watermarked-status-pagination",
+    "file-registration-recovery",
+    "exact-receipt-validation",
+    "immutable-batch-json-file-transport"
+  ],
+  "integrationStatus": {
+    "syntheticPorts": "tested-offline-v2",
+    "sharedClientAdapter": "injected-only",
+    "liveMcp": "not-verified-for-v2",
+    "liveEgo": "not-verified-for-v2",
+    "installedOrLoaded": "not-claimed"
+  },
+  "knownLimits": [
+    "Pinned defaults: 100 involved evidence IDs and 1GiB per batch, 100MiB per file, 1GiB/1000 refs per result",
+    "Legacy v1 journals are rejected, not migrated; recover with the preserved 0.1.0 package",
+    "Damaged/lost local facts are never reconstructed from server counts",
+    "No production Key, browser driver, transport retry or independent HTML report is distributed"
+  ]
+}

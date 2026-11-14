@@ -1,0 +1,34 @@
+{
+  "artifactId": "ae7aca39-90be-4630-9b36-c5abcab63cfe",
+  "upstreamManifest": {
+    "artifactVersion": "0.1.0",
+    "protocolVersion": "2026-07-28",
+    "exportedAt": "2026-11-13T01:33:22.483Z",
+    "structuralValidationOnly": true,
+    "serverRemainsBusinessAuthority": true,
+    "toolCount": 23,
+    "componentCount": 227,
+    "omittedComponents": [],
+    "sourceHashes": {
+      "packages/contracts/src/base.ts": "4f2755cab92117c84f76bfb6299bcf38ea5849c437b1b0a58a2a7f7b3504bccc",
+      "packages/contracts/src/domain.ts": "218f9be36354fbd9e04f11f8769be0be79db95fa81def70ac9390e0415213561",
+      "packages/contracts/src/assets.ts": "d58af77891355fd74d897c592a83ab4c119244d25414cc4a20f5db17d4686383",
+      "packages/contracts/src/requirements.ts": "aa399de796c724e5a2aa208e451e9ddcd9d77b5dde6cb5c25ae63cab487a4fdc",
+      "packages/contracts/src/ui-results.ts": "425b76aea9f4bcaf458e0d151e873931843f92021ef08d1ecc9fb2b5c5901455",
+      "packages/contracts/src/ui-delivery.ts": "d32cdba22ea620307d67180480cdb7e1f57d527e1e57ba5975232a23c0f7475c",
+      "packages/contracts/src/knowledge.ts": "3c9d78b95fe1deec6bd58c4a51d1afaf48670a317b959cc6f6153fc502674848",
+      "packages/contracts/src/plans.ts": "a3d451aa24174246399326553da96924b4920d4f3c072e79dde6995b353c1899",
+      "packages/contracts/src/retests.ts": "2abed4474ad095fc43bfd74d1bee19c85dae319ca65d522c3b705a69827663cc"
+    },
+    "files": {
+      "catalog.json": "fe050e1c4fba380d861613a7723f590824cf1c97da94bb740fa60963610d553f",
+      "components.json": "08ede81652f900e37d7ea4ccc870e823254d8808b1268a5f2b33a9e1cd5c1afa"
+    }
+  },
+  "derivative": {
+    "path": "ae7aca39-90be-4630-9b36-c5abcab63cfe-v2.json",
+    "sha256": "b743b4d2c04a440aad22f5cd84014f96918a3aeb076948d10468aeb80e1f32cb"
+  },
+  "structuralOnly": true,
+  "serverBusinessAuthority": true
+}

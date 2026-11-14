@@ -1,0 +1,33 @@
+{
+  "name": "aitesthub-egotest-skill",
+  "version": "0.2.1",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@11.28.11",
+  "engines": {
+    "node": "24.19.0",
+    "pnpm": "11.28.11"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && node scripts/build.mjs",
+    "package": "pnpm build && python scripts/package_skill.py",
+    "skill:validate": "python scripts/validate_skill.py",
+    "format:check": "prettier --check \"src/**/*.ts\" \"scripts/*.mjs\" package.json tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.0",
+    "typescript": "6.0.3",
+    "esbuild": "0.28.2",
+    "prettier": "3.10.0"
+  },
+  "files": [
+    "skills/ath-web-execute",
+    "LICENSE",
+    "README.md"
+  ]
+}
