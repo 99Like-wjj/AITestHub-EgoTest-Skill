@@ -14,7 +14,6 @@ import { V2DeliveryStore, type V2Kind, type V2Outbox } from './v2-store.js';
 import { assertBatchBudget, planV2Batches } from './v2-planner.js';
 import {
   readV2,
-  v2Component,
   validateV2Tool,
   type BatchReceipt,
   type DeliveryStatus,
@@ -84,7 +83,6 @@ export class V2ExecutionClient {
       'OWNER_MISMATCH',
       'This local run belongs to another trusted host principal.',
     );
-    v2Component('domain.executionScopeSchema').parse(view.scope);
     return view;
   }
   private async call(name: string, args: Record<string, unknown>) {

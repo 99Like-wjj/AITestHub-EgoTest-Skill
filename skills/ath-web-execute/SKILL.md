@@ -11,6 +11,8 @@ description: "通过用户本地 AI 与 Ego 执行 AITestHub 已批准 UI 计划
 
 先运行 `node scripts/tool.mjs tool-info`，核对包完整性与运行时。它不证明已安装、当前会话已加载、MCP联通或Ego可用。0.2.1使用v2交付候选和注入式可信host；其真实联通另验，不继承0.1.0的小范围实测结论。缺host时保留本地校验，不自造HTTP或把Key贴聊天。
 
+已有本地 UI 执行可按 [独立归档](references/independent-archives.md) 整理和提交。归档不领取计划、不执行目标、不修改正式范围。
+
 执行前读 [v2固定范围与交付](references/v2-delivery.md)，可信host入口为 `runV2LocalCommand`。涉及中断再读 [恢复契约](references/recovery-contract.md)；接入真实宿主前读 [Ego与安全条件](references/ego-safety.md)。旧journal必须使用保留的原0.1.0包恢复，不清空、换ID或静默迁移。
 
 1. 核对用户授权的项目、环境、账号及允许副作用，确认共同host和实际Ego版本指南。采用当次指南的停止/接管规则；本项目自测的特殊空间重建授权不扩成默认用户授权。

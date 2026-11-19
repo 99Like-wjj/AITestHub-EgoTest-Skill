@@ -1,12 +1,13 @@
 {
   "id": "ath-web-execute",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "license": "MIT",
   "runtime": {
     "node": "24.19.0",
     "entry": "scripts/runtime/index.mjs",
     "types": "scripts/runtime/index.d.mts",
     "commandExport": "runV2LocalCommand",
+    "archiveExport": "runUiArchiveCommand",
     "diagnostics": "scripts/tool.mjs"
   },
   "hostPrincipal": "verified-current-actor-and-platform-origin",
@@ -15,7 +16,8 @@
   "compatibleSchemaVersions": [
     "ath.execution-scope.v1",
     "ath.result-batch.v2",
-    "ath.ui-delivery.v2"
+    "ath.ui-delivery.v2",
+    "ath.ui-archive.v1"
   ],
   "mcpProtocolVersion": "2026-07-28",
   "contractValidation": "vendored-structural-plus-local-cross-field-checks",
@@ -44,7 +46,8 @@
     "watermarked-status-pagination",
     "file-registration-recovery",
     "exact-receipt-validation",
-    "immutable-batch-json-file-transport"
+    "immutable-batch-json-file-transport",
+    "independent-observation-archive"
   ],
   "integrationStatus": {
     "syntheticPorts": "tested-offline-v2",

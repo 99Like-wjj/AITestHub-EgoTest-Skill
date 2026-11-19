@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import archiveContract from '../contracts/archive-v1.json' with { type: 'json' };
 import { digest, assertNoSecrets } from './canonical.js';
 import { invariant } from './errors.js';
 import { platformSchema } from './platform-schema.js';
@@ -34,6 +35,7 @@ export interface ScopeItem {
     kind: 'UI';
     scenarioId: string;
     title: string;
+    steps?: { action: string; expected?: string | undefined }[];
     [key: string]: unknown;
   };
   [key: string]: unknown;
@@ -120,7 +122,11 @@ export interface Progress {
 
 // Types are a consumed-field view; JSON Schema is the structural runtime authority.
 // Server refinements/CAS/ACL remain authoritative.
-export const scopeSchema = platformSchema('domain.executionScopeSchema');
+export const scopeSchema = z.fromJSONSchema(
+  archiveContract.schemas.executionScopeSchema as Parameters<
+    typeof z.fromJSONSchema
+  >[0],
+);
 export const evidenceSchema = platformSchema(
   'domain.evidenceManifestItemSchema',
 ) as z.ZodType<ManifestItem>;

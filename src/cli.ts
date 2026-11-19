@@ -5,6 +5,7 @@ import { parseJson, bytesHash, assertNoSecrets } from './canonical.js';
 import { scope, submissionSchema } from './contracts.js';
 import { LocalError, invariant } from './errors.js';
 import { readV2, type ResultBatch } from './v2-contracts.js';
+import { exportUiArchive } from './archives.js';
 import { assertBatchBudget } from './v2-planner.js';
 
 export async function toolInfo(skillRoot: string) {
@@ -81,6 +82,22 @@ export async function main(
   if (command === 'tool-info') {
     process.stdout.write(
       JSON.stringify(await toolInfo(skillRoot), null, 2) + '\n',
+    );
+    return;
+  }
+  if (command === 'validate-archive') {
+    invariant(
+      args.length === 2,
+      'ARGUMENTS',
+      'Supply one explicitly selected archive JSON.',
+    );
+    exportUiArchive(parseJson(await readFile(resolve(args[1]!), 'utf8')));
+    process.stdout.write(
+      JSON.stringify({
+        valid: true,
+        schemaVersion: 'ath.ui-archive.v1',
+        validationOnly: true,
+      }) + '\n',
     );
     return;
   }

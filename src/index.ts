@@ -1,4 +1,5 @@
 export * from './ports.js';
+export * from './archives.js';
 export * from './errors.js';
 export * from './canonical.js';
 export * from './contracts.js';
