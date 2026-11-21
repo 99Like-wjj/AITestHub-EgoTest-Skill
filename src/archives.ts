@@ -2,12 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import archiveContract from '../contracts/archive-v1.json' with { type: 'json' };
 import { assertNoSecrets, digest, parseJson } from './canonical.js';
-import {
-  evidenceSchema,
-  receiptSchema,
-  submissionSchema,
-} from './contracts.js';
+import { evidenceSchema, receiptSchema, resultSchema } from './contracts.js';
 import { invariant } from './errors.js';
+import { withResultEvidence } from './result-evidence-contract.js';
 import type { CommandPorts } from './v2-commands.js';
 
 const component = (name: keyof typeof archiveContract.schemas) =>
@@ -16,10 +13,28 @@ const component = (name: keyof typeof archiveContract.schemas) =>
   );
 const archiveInput = component('uiArchiveInputSchema');
 const archivePreview = component('uiArchivePreviewSchema');
-const sourceResult = component('archiveResultSchema');
+const sourceResult = z.fromJSONSchema(
+  withResultEvidence(
+    archiveContract.schemas.archiveResultSchema,
+    1,
+    'localItemId',
+  ) as Parameters<typeof z.fromJSONSchema>[0],
+);
 const sourceEvidence = component('archiveEvidenceSchema');
 const digitId = z.uuid();
 const textId = z.string().min(1).max(200);
+const resultProtocol = 'ath.ui-archive-results.v1';
+const archiveDeliveryReceipt = z.strictObject({
+  receipt: receiptSchema,
+  currentDelivery: z.strictObject({
+    missingFileIds: z.array(digitId),
+    status: z.enum(['notSubmitted', 'receiving', 'incomplete', 'complete']),
+  }),
+});
+const resultIdentity = z.object({
+  localItemId: textId,
+  originalOutcome: z.string(),
+});
 const sourceShape = z.object({
   localExecutionId: textId,
   endedAt: z.string(),
@@ -58,6 +73,7 @@ const workspaceRecord = z.strictObject({
   ]),
   receipt: z.unknown().optional(),
   submittedReceipt: z.unknown().optional(),
+  submissionProtocol: z.literal(resultProtocol).optional(),
 });
 const reference = { projectId: digitId, localExecutionId: textId };
 const requestSchema = z.discriminatedUnion('op', [
@@ -72,7 +88,7 @@ const requestSchema = z.discriminatedUnion('op', [
     op: z.literal('submit'),
     ...reference,
     items: z.array(sourceResult),
-    files: z.array(evidenceSchema),
+    files: z.array(evidenceSchema).max(100),
   }),
   z.strictObject({ op: z.literal('recover-submission'), ...reference }),
 ]);
@@ -90,9 +106,7 @@ export function exportUiArchive(input: unknown) {
   const declared = new Map(
     expectation.items.map((row) => [row.localItemId, row.originalOutcome]),
   );
-  const facts = parsed.results.map((value) =>
-    z.object({ localItemId: textId, originalOutcome: z.string() }).parse(value),
-  );
+  const facts = parsed.results.map((value) => resultIdentity.parse(value));
   invariant(
     declared.size === expectation.items.length &&
       facts.length === declared.size &&
@@ -140,6 +154,8 @@ export async function runUiArchiveCommand(ports: CommandPorts, raw: unknown) {
         receipt.scope.localExecutionId === localId &&
         receipt.scope.items.length === declared.length &&
         known.size === declared.length &&
+        new Set(receipt.scope.items.map((item) => item.runItemId)).size ===
+          declared.length &&
         declared.every((i) => known.get(i.localItemId) === i.originalOutcome),
       'ARCHIVE_RECEIPT_MISMATCH',
       'Original registration could not be matched to local source.',
@@ -231,9 +247,15 @@ export async function runUiArchiveCommand(ports: CommandPorts, raw: unknown) {
         'ARCHIVE_NOT_SENT',
         'No result submission was dispatched.',
       );
-      const response = z.object({ receipt: receiptSchema }).parse(
-        await call('ath_results', {
-          op: 'receipt',
+      invariant(
+        state.submissionProtocol === resultProtocol,
+        'ARCHIVE_ORIGINAL_PROTOCOL_REQUIRED',
+        'The original pending submission belongs to an earlier package. Keep its journal and reconcile its original receipt without submitting a new command.',
+      );
+      const response = archiveDeliveryReceipt.parse(
+        await call('ath_ui_archives', {
+          op: 'result-receipt',
+          runId: receipt.runId,
           submissionId: state.submissionId,
         }),
       ).receipt;
@@ -251,27 +273,59 @@ export async function runUiArchiveCommand(ports: CommandPorts, raw: unknown) {
       'Read original submission status before any further action.',
     );
     const ids = new Map(
-      receipt.scope.items.map((i) => [i.localItemId, i.runItemId]),
+      receipt.scope.items.map((item) => [item.localItemId, item]),
+    );
+    invariant(
+      request.items.length === ids.size &&
+        new Set(
+          request.items.map((value) => resultIdentity.parse(value).localItemId),
+        ).size === ids.size,
+      'ARCHIVE_ITEMS_MISMATCH',
+      'The submission must contain one observation for every original archive item.',
     );
     const items = request.items.map((value) => {
-      const row = z.object({ localItemId: textId }).passthrough().parse(value);
+      const row = resultIdentity.passthrough().parse(value);
       const { localItemId, ...fact } = row;
-      return { ...fact, runItemId: ids.get(localItemId) };
+      const fixed = ids.get(localItemId);
+      invariant(
+        fixed && fixed.declaredOutcome === fact.originalOutcome,
+        'ARCHIVE_ITEMS_MISMATCH',
+        'The submitted observation must retain the original archive judgment.',
+      );
+      return resultSchema.parse({ ...fact, runItemId: fixed.runItemId });
     });
-    const submission = submissionSchema.parse({
-      schemaVersion: 'ath.result-submission.v1',
+    const knownFiles = new Set(
+      request.files.map((file) => file.localEvidenceId),
+    );
+    invariant(
+      knownFiles.size === request.files.length &&
+        new Set(items.map((item) => item.localResultId)).size ===
+          items.length &&
+        items.every((item) =>
+          item.evidenceRefs.every((id) => knownFiles.has(id)),
+        ),
+      'ARCHIVE_EVIDENCE_MISMATCH',
+      'Result identities must be unique and every referenced evidence file must be declared.',
+    );
+    const submission = {
+      schemaVersion: resultProtocol,
       runId: receipt.runId,
       submissionId: state.submissionId,
       snapshotDigest: receipt.scope.snapshotDigest,
-      completion: 'complete',
       endedAt: sourceShape.parse(state.source).endedAt,
       items,
       evidenceManifest: request.files,
-      notExecutedItemIds: [],
+    };
+    await save({
+      ...state,
+      phase: 'submitting',
+      submissionProtocol: resultProtocol,
     });
-    await save({ ...state, phase: 'submitting' });
     const response = receiptSchema.parse(
-      await call('ath_results', { op: 'commit', input: submission }),
+      await call('ath_ui_archives', {
+        op: 'submit-results',
+        input: submission,
+      }),
     );
     invariant(
       response.submissionId === state.submissionId,

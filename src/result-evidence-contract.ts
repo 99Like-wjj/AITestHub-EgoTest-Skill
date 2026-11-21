@@ -22,7 +22,11 @@ export const stepEvidenceContract = {
 
 // Augment only the exact result leaf or its descriptor core. Frozen artifacts
 // remain unchanged, including strict unknown-property rejection everywhere else.
-export function withResultEvidence(schema: unknown, expected: number): unknown {
+export function withResultEvidence(
+  schema: unknown,
+  expected: number,
+  identity: 'runItemId' | 'localItemId' = 'runItemId',
+): unknown {
   if (expected === 0) return schema;
   const copy = structuredClone(schema);
   let matches = 0;
@@ -41,7 +45,9 @@ export function withResultEvidence(schema: unknown, expected: number): unknown {
     ) {
       const keys = Object.keys(node.properties);
       if (
-        legacyFields.every((key) => keys.includes(key)) &&
+        legacyFields.every((key) =>
+          keys.includes(key === 'runItemId' ? identity : key),
+        ) &&
         keys.length ===
           legacyFields.length + Number(keys.includes('evidenceRefs'))
       ) {

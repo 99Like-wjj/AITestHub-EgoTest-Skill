@@ -1,6 +1,6 @@
 {
   "id": "ath-web-execute",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "license": "MIT",
   "runtime": {
     "node": "24.19.0",
@@ -17,7 +17,8 @@
     "ath.execution-scope.v1",
     "ath.result-batch.v2",
     "ath.ui-delivery.v2",
-    "ath.ui-archive.v1"
+    "ath.ui-archive.v1",
+    "ath.ui-archive-results.v1"
   ],
   "mcpProtocolVersion": "2026-07-28",
   "contractValidation": "vendored-structural-plus-local-cross-field-checks",
