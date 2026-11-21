@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { ExecutionStore } from './store.js';
-import { ExecutionClient } from './client.js';
-import type { CommandPorts } from './commands.js';
+import { EvidenceFileClient } from './client.js';
+import type { CommandPorts } from './v2-commands.js';
 import type { Identity, ManifestItem, Progress } from './contracts.js';
 import { id, time, progressSchema } from './contracts.js';
 import type { LocalEvidence, LocalResult } from './store.js';
@@ -41,7 +41,7 @@ const factReceipt = z
   .passthrough();
 export class V2ExecutionClient {
   readonly delivery: V2DeliveryStore;
-  private readonly files: ExecutionClient;
+  private readonly files: EvidenceFileClient;
   constructor(
     readonly store: ExecutionStore,
     readonly ports: CommandPorts,
@@ -52,7 +52,7 @@ export class V2ExecutionClient {
       'Use a v2 workspace; old journals are not silently migrated.',
     );
     this.delivery = new V2DeliveryStore(store);
-    this.files = new ExecutionClient(store, {
+    this.files = new EvidenceFileClient(store, {
       ...ports,
       privateRoot: resolve(ports.privateRoot, 'v2'),
     });

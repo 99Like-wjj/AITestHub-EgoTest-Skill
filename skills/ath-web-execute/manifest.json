@@ -1,6 +1,6 @@
 {
   "id": "ath-web-execute",
-  "version": "0.2.3",
+  "version": "0.2.6",
   "license": "MIT",
   "runtime": {
     "node": "24.19.0",
@@ -39,6 +39,7 @@
     "claim-outbox-recovery",
     "action-intent-and-unknown-markers",
     "observations-and-evidence-index",
+    "frozen-step-observations-and-explicit-evidence-gaps",
     "bounded-evidence-batch-planner",
     "descriptor-and-reference-segments",
     "explicit-end-resume-and-cumulative-seal",

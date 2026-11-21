@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "ath.result-step-evidence-overlay.v1",
+  "source": {
+    "component": "domain.resultItemSchema",
+    "path": "packages/contracts/src/domain.ts",
+    "sha256": "1b816ab435c044f1db8655fcc87852e4517de155f3a2fc5f3f7dcb7dc5b6cf42"
+  },
+  "properties": {
+    "stepObservations": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "actual": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "blocked",
+              "inconclusive",
+              "notExecuted"
+            ]
+          },
+          "evidenceRefs": {
+            "default": [],
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        "required": [
+          "ordinal",
+          "actual"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "evidenceGaps": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "notCaptured",
+              "pendingUpload",
+              "uploadFailed"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "label",
+          "state",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

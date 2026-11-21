@@ -1,12 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import {
-  canonical,
-  digest,
-  parseJson,
-  assertNoSecrets,
-  bytesHash,
-} from './canonical.js';
+import { canonical, digest, parseJson, assertNoSecrets } from './canonical.js';
 import { invariant, LocalError } from './errors.js';
 import {
   scope,
@@ -17,14 +11,9 @@ import {
   bytes,
   time,
   resultSchema,
+  validateResultEvidence,
 } from './contracts.js';
-import type {
-  ExecutionScope,
-  Identity,
-  ResultItem,
-  Submission,
-  Receipt,
-} from './contracts.js';
+import type { ExecutionScope, Identity, ResultItem } from './contracts.js';
 import type { WorkspacePort } from './ports.js';
 
 const zero = '0'.repeat(64);
@@ -85,19 +74,6 @@ export interface ActionState extends Action {
   attempted: boolean;
   reason?: string | undefined;
 }
-export type Outbox = {
-  outboxId: string;
-  kind: 'progress' | 'result';
-  tool: 'ath_ui_executions' | 'ath_results';
-  args: Record<string, unknown>;
-  payloadDigest: string;
-  status: 'prepared' | 'dispatched' | 'unknown' | 'acknowledged' | 'rejected';
-  receipt?: unknown;
-  lastRecovery?: unknown;
-  replayReason?: string | undefined;
-  transportArgs?: Record<string, unknown>;
-  transportDigest?: string;
-};
 export type EvidenceState = LocalEvidence & {
   upload: 'local' | 'uploading' | 'registered' | 'verified' | 'unknown';
   fileId?: string | undefined;
@@ -107,7 +83,6 @@ export type EvidenceState = LocalEvidence & {
 export type LocalResult = {
   item: ResultItem;
   observationIds: string[];
-  evidenceGap?: { reason: string; impact: string } | undefined;
   unresolvedActionIds: string[];
 };
 export interface View {
@@ -118,7 +93,6 @@ export interface View {
   actions: Map<string, ActionState>;
   evidence: Map<string, EvidenceState>;
   results: Map<string, LocalResult>;
-  outboxes: Map<string, Outbox>;
 }
 /** Unexecuted is a factual declaration, never an escape hatch for unknown effects. */
 export function assertCanDeclareNotExecuted(
@@ -358,77 +332,6 @@ export class ExecutionStore {
         view.results.set(x.item.runItemId, x);
         break;
       }
-      case 'outbox': {
-        const x = z
-          .strictObject({
-            outboxId: id,
-            kind: z.enum(['progress', 'result']),
-            tool: z.enum(['ath_ui_executions', 'ath_results']),
-            args: z.record(z.string(), z.unknown()),
-            payloadDigest: sha,
-          })
-          .parse(data);
-        invariant(
-          digest(x.args) === x.payloadDigest,
-          'CORRUPT_LEDGER',
-          'Frozen outbox digest changed.',
-        );
-        view.outboxes.set(x.outboxId, { ...x, status: 'prepared' });
-        break;
-      }
-      case 'outbox-status': {
-        const x = z
-            .strictObject({
-              outboxId: id,
-              status: z.enum([
-                'dispatched',
-                'unknown',
-                'acknowledged',
-                'rejected',
-              ]),
-              receipt: z.unknown().optional(),
-              replayReason: z.string().min(1).optional(),
-            })
-            .parse(data),
-          o = view.outboxes.get(x.outboxId);
-        invariant(
-          o,
-          'CORRUPT_LEDGER',
-          'Outbox status has no original payload.',
-        );
-        view.outboxes.set(x.outboxId, { ...o, ...x });
-        break;
-      }
-      case 'outbox-recovery': {
-        const x = z
-            .strictObject({ outboxId: id, value: z.unknown() })
-            .parse(data),
-          o = view.outboxes.get(x.outboxId);
-        invariant(o, 'CORRUPT_LEDGER', 'Recovery has no original outbox.');
-        view.outboxes.set(x.outboxId, { ...o, lastRecovery: x.value });
-        break;
-      }
-      case 'result-transport': {
-        const x = z
-            .strictObject({
-              outboxId: id,
-              args: z.record(z.string(), z.unknown()),
-              transportDigest: sha,
-            })
-            .parse(data),
-          o = view.outboxes.get(x.outboxId);
-        invariant(
-          o && digest(x.args) === x.transportDigest,
-          'CORRUPT_LEDGER',
-          'Original JSON transport has no matching frozen outbox.',
-        );
-        view.outboxes.set(x.outboxId, {
-          ...o,
-          transportArgs: x.args,
-          transportDigest: x.transportDigest,
-        });
-        break;
-      }
       default:
         throw new LocalError(
           'UNSUPPORTED_LEDGER_EVENT',
@@ -446,7 +349,6 @@ export class ExecutionStore {
       actions: new Map(),
       evidence: new Map(),
       results: new Map(),
-      outboxes: new Map(),
     };
     let previous = zero;
     try {
@@ -534,11 +436,11 @@ export class ExecutionStore {
     });
   }
   private fixed(view: View, runItemId: string) {
-    invariant(
-      view.scope.items.some((x) => x.runItemId === runItemId),
-      'OUTSIDE_SCOPE',
-      'The item is not in this frozen scope.',
+    const item = view.scope.items.find(
+      (entry) => entry.runItemId === runItemId,
     );
+    invariant(item, 'OUTSIDE_SCOPE', 'The item is not in this frozen scope.');
+    return item;
   }
   async beginAction(input: Omit<Action, 'actionId'>): Promise<string> {
     const x = actionSchema.parse({ ...input, actionId: randomUUID() });
@@ -688,21 +590,21 @@ export class ExecutionStore {
     });
   }
   async recordResult(input: LocalResult) {
+    invariant(
+      !(input && typeof input === 'object' && 'evidenceGap' in input),
+      'LEGACY_EVIDENCE_GAP_UNSUPPORTED',
+      'Use item.evidenceGaps with explicit evidence state and reason in new results.',
+    );
     const x = z
       .strictObject({
         item: resultSchema,
         observationIds: z.array(id),
         unresolvedActionIds: z.array(id),
-        evidenceGap: z
-          .strictObject({
-            reason: z.string().min(1).max(10000),
-            impact: z.string().min(1).max(10000),
-          })
-          .optional(),
       })
       .parse(input);
     return this.mutate(async (v, emit) => {
-      this.fixed(v, x.item.runItemId);
+      const fixed = this.fixed(v, x.item.runItemId);
+      validateResultEvidence(x.item, fixed);
       if (x.item.originalOutcome === 'notExecuted') {
         assertCanDeclareNotExecuted(v, x.item.runItemId);
         invariant(
@@ -777,9 +679,9 @@ export class ExecutionStore {
         )
       )
         invariant(
-          x.evidenceGap,
+          x.item.evidenceGaps?.length,
           'SCREENSHOT_OR_GAP_REQUIRED',
-          'Record a real key screenshot or an explicit evidence gap and its impact.',
+          'Record a real key screenshot or explicitly record missing evidence in item.evidenceGaps.',
         );
       await emit('result', x);
     });
@@ -792,54 +694,6 @@ export class ExecutionStore {
         'No such evidence.',
       );
       await emit('file-recovery', { localEvidenceId, value });
-    });
-  }
-  async attachResultJson(outboxId: string, localEvidenceId: string) {
-    return this.mutate(async (v, emit) => {
-      const o = v.outboxes.get(outboxId),
-        e = v.evidence.get(localEvidenceId);
-      invariant(
-        o?.kind === 'result' && o.status === 'prepared',
-        'OUTBOX_STATE',
-        'Select a verified JSON transport before dispatching the original submission.',
-      );
-      invariant(
-        e?.upload === 'verified' && e.fileId,
-        'FILE_NOT_VERIFIED',
-        'Original JSON must have a verified matching upload.',
-      );
-      const encoded = canonical(o.args.input);
-      invariant(
-        e.sha256 === bytesHash(Buffer.from(encoded, 'utf8')) &&
-          e.bytes === String(Buffer.byteLength(encoded, 'utf8')),
-        'ORIGINAL_JSON_MISMATCH',
-        'JSON file differs from the exact frozen submission.',
-      );
-      const args = {
-          op: 'submit-file',
-          projectId: v.scope.projectId,
-          fileId: e.fileId,
-        },
-        transportDigest = digest(args);
-      if (o.transportArgs) {
-        invariant(
-          o.transportDigest === transportDigest,
-          'OUTBOX_ID_CONFLICT',
-          'Original transport is already fixed to another file.',
-        );
-        return;
-      }
-      const payload = o.args.input as Submission,
-        files = new Map(
-          payload.evidenceManifest.map((x) => [x.fileId, BigInt(x.bytes)]),
-        );
-      files.set(e.fileId, BigInt(e.bytes));
-      invariant(
-        [...files.values()].reduce((a, b) => a + b, 0n) <= 1073741824n,
-        'DELIVERY_BYTE_LIMIT',
-        'Original JSON source also counts toward the 1GiB unique-file budget.',
-      );
-      await emit('result-transport', { outboxId, args, transportDigest });
     });
   }
   async beginFileUpload(localEvidenceId: string, localFileId: string) {
@@ -859,98 +713,4 @@ export class ExecutionStore {
       });
     });
   }
-  async addOutbox(value: Omit<Outbox, 'status' | 'receipt' | 'lastRecovery'>) {
-    return this.mutate(async (v, emit) => {
-      invariant(
-        !v.outboxes.has(value.outboxId),
-        'OUTBOX_ID_CONFLICT',
-        'Outbox identity already exists.',
-      );
-      invariant(
-        digest(value.args) === value.payloadDigest,
-        'OUTBOX_DIGEST_MISMATCH',
-        'Outbox payload is not frozen.',
-      );
-      await emit('outbox', value);
-    });
-  }
-  async outboxStatus(
-    outboxId: string,
-    status: Outbox['status'],
-    receipt?: unknown,
-    replayReason?: string,
-  ) {
-    invariant(
-      status !== 'prepared',
-      'OUTBOX_STATE',
-      'Prepared is established only by the original frozen payload.',
-    );
-    return this.mutate(async (v, emit) => {
-      const o = v.outboxes.get(outboxId);
-      invariant(o, 'OUTBOX_NOT_FOUND', 'No original outbox exists.');
-      if (status === 'dispatched')
-        invariant(
-          o.status === 'prepared' ||
-            (['unknown', 'dispatched'].includes(o.status) &&
-              o.lastRecovery !== undefined &&
-              replayReason?.trim()),
-          'OUTBOX_RECOVERY_REQUIRED',
-          'Dispatched/unknown metadata needs original recovery and explicit same-payload replay, not another send.',
-        );
-      await emit('outbox-status', {
-        outboxId,
-        status,
-        ...(receipt === undefined ? {} : { receipt }),
-        ...(replayReason === undefined ? {} : { replayReason }),
-      });
-    });
-  }
-  async recovered(outboxId: string, value: unknown) {
-    return this.mutate(async (v, emit) => {
-      invariant(
-        v.outboxes.has(outboxId),
-        'OUTBOX_NOT_FOUND',
-        'No original outbox exists.',
-      );
-      await emit('outbox-recovery', { outboxId, value });
-    });
-  }
-  async acceptRecovered(outboxId: string, receipt: Receipt) {
-    await this.outboxStatus(outboxId, 'acknowledged', receipt);
-  }
-}
-
-export function resultPayload(view: View, submission: Submission): void {
-  invariant(
-    submission.runId === view.scope.runId &&
-      submission.snapshotDigest === view.scope.snapshotDigest,
-    'SCOPE_DIGEST_MISMATCH',
-    'Submission is not for this fixed scope.',
-  );
-  const ids = [
-    ...submission.items.map((x) => x.runItemId),
-    ...submission.notExecutedItemIds,
-  ];
-  invariant(
-    ids.every((x) => view.scope.items.some((y) => y.runItemId === x)),
-    'OUTSIDE_SCOPE',
-    'Submission contains an item outside this run.',
-  );
-  for (const runItemId of submission.notExecutedItemIds)
-    assertCanDeclareNotExecuted(view, runItemId);
-  for (const item of submission.items)
-    if (item.originalOutcome === 'notExecuted') {
-      assertCanDeclareNotExecuted(view, item.runItemId);
-      invariant(
-        item.sideEffectCertainty === 'notApplicable',
-        'NOT_EXECUTED_CONFLICT',
-        'An unexecuted item cannot claim unknown/known side effects.',
-      );
-    }
-  if (submission.completion === 'complete')
-    invariant(
-      ids.length === view.scope.items.length,
-      'SCOPE_INCOMPLETE',
-      'Complete delivery must account for the full fixed scope; no automatic not-executed fill.',
-    );
 }

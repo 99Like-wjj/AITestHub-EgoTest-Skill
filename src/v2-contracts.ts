@@ -1,7 +1,15 @@
 import { z } from 'zod';
 import snapshot from '../contracts/ae7aca39-90be-4630-9b36-c5abcab63cfe-v2.json' with { type: 'json' };
 import { invariant } from './errors.js';
-import type { ManifestItem, ResultItem } from './contracts.js';
+import {
+  validateResultEvidence,
+  type ManifestItem,
+  type ResultItem,
+} from './contracts.js';
+import {
+  withResultEvidence,
+  resultEvidenceToolLeaves,
+} from './result-evidence-contract.js';
 
 type Node = Record<string, unknown>;
 const cache = new Map<string, z.ZodType>();
@@ -67,7 +75,20 @@ export function v2Component(name: string): z.ZodType {
     'CONTRACT_NOT_AVAILABLE',
     'Required deployed component is unavailable.',
   );
-  compiled = z.fromJSONSchema(source as Parameters<typeof z.fromJSONSchema>[0]);
+  const resultNodes =
+    name === 'ui-delivery.uiResultBatchSchema'
+      ? 2
+      : [
+            'ui-delivery.uiResultDescriptorSchema',
+            'domain.resultItemSchema',
+          ].includes(name)
+        ? 1
+        : 0;
+  compiled = z.fromJSONSchema(
+    withResultEvidence(source, resultNodes) as Parameters<
+      typeof z.fromJSONSchema
+    >[0],
+  );
   cache.set(name, compiled);
   return compiled;
 }
@@ -81,7 +102,8 @@ export function validateV2Tool(
     'INVALID_TOOL_INPUT',
     'Tool and explicit op must exist in the deployed contract.',
   );
-  const key = `${name}/${value.op}`;
+  const opName = value.op;
+  const key = `${name}/${opName}`;
   let compiled = cache.get(key);
   if (!compiled) {
     const selected = leaves(source, (source.$defs ?? {}) as Node).filter(
@@ -99,7 +121,12 @@ export function validateV2Tool(
       'Unknown deployed tool operation.',
     );
     const validators = selected.map((node) =>
-      z.fromJSONSchema(node as Parameters<typeof z.fromJSONSchema>[0]),
+      z.fromJSONSchema(
+        withResultEvidence(
+          node,
+          resultEvidenceToolLeaves(name, opName),
+        ) as Parameters<typeof z.fromJSONSchema>[0],
+      ),
     );
     compiled =
       validators.length === 1
@@ -111,6 +138,9 @@ export function validateV2Tool(
 }
 export function readV2<T>(name: string, value: unknown): T {
   v2Component(`ui-delivery.${name}`).parse(value);
+  if (name === 'uiResultBatchSchema')
+    for (const item of (value as ResultBatch).items)
+      validateResultEvidence(item);
   return structuredClone(value) as T;
 }
 export const v2ContractArtifactId = snapshot.artifactId;

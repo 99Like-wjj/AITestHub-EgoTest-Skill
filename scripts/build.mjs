@@ -31,7 +31,7 @@ await build({
 await writeFile(
   resolve(runtime, 'index.d.mts'),
   (await readFile(resolve(root, 'src/ports.ts'), 'utf8')) +
-    '\nexport interface CommandPorts { tool:ToolPort; result:ResultPort; workspace:WorkspacePort; files:FileChannelPort; privateRoot:string; principal:{actorId:string;platformOrigin:string}; }\n/** v2 default trusted-host entry. Old journals must use their preserved original package. */\nexport declare function runV2LocalCommand(ports:CommandPorts,request:unknown):Promise<unknown>;\n/** Legacy library entry; not the v2 Skill default. */\nexport declare function runLocalCommand(ports:CommandPorts,request:unknown):Promise<unknown>;\nexport declare function runUiArchiveCommand(ports:CommandPorts,request:unknown):Promise<unknown>;\nexport declare function exportUiArchive(input:unknown):string;\n',
+    '\nexport interface CommandPorts { tool:ToolPort; result:ResultPort; workspace:WorkspacePort; files:FileChannelPort; privateRoot:string; principal:{actorId:string;platformOrigin:string}; }\n/** v2 default trusted-host entry. Old journals must use their preserved original package. */\nexport declare function runV2LocalCommand(ports:CommandPorts,request:unknown):Promise<unknown>;\nexport declare function runUiArchiveCommand(ports:CommandPorts,request:unknown):Promise<unknown>;\nexport declare function exportUiArchive(input:unknown):string;\n',
 );
 await mkdir(resolve(skill, 'contracts'), { recursive: true });
 await copyFile(
@@ -59,6 +59,10 @@ await copyFile(
 await copyFile(
   resolve(root, 'contracts/archive-v1.json'),
   resolve(skill, 'contracts/archive-v1.json'),
+);
+await copyFile(
+  resolve(root, 'contracts/step-evidence-v1.json'),
+  resolve(skill, 'contracts/step-evidence-v1.json'),
 );
 await copyFile(resolve(root, 'LICENSE'), resolve(skill, 'LICENSE'));
 await mkdir(resolve(skill, 'third-party/zod'), { recursive: true });
@@ -105,6 +109,7 @@ allowed.add(`contracts/${v2Provenance.derivative.path}`);
 allowed.add('references/v2-delivery.md');
 allowed.add('references/independent-archives.md');
 allowed.add('contracts/archive-v1.json');
+allowed.add('contracts/step-evidence-v1.json');
 for (const file of (await files(skill)).sort()) {
   const name = relative(skill, file).replaceAll('\\', '/');
   if (!allowed.has(name)) throw new Error(`Unexpected package entry: ${name}`);

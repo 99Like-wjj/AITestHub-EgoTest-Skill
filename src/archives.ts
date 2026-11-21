@@ -8,7 +8,7 @@ import {
   submissionSchema,
 } from './contracts.js';
 import { invariant } from './errors.js';
-import type { CommandPorts } from './commands.js';
+import type { CommandPorts } from './v2-commands.js';
 
 const component = (name: keyof typeof archiveContract.schemas) =>
   z.fromJSONSchema(

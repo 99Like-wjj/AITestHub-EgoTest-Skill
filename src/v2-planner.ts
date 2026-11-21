@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { canonical, digest } from './canonical.js';
 import { invariant } from './errors.js';
-import type { ManifestItem, ResultItem } from './contracts.js';
+import {
+  normalizeResultEvidence,
+  validateResultEvidence,
+  type ManifestItem,
+  type ResultItem,
+} from './contracts.js';
 import {
   readV2,
   type Descriptor,
@@ -129,7 +134,9 @@ export function planV2Batches(input: {
   };
   const seenItems = new Set<string>(),
     seenLocal = new Set<string>();
-  for (const item of input.items) {
+  for (const original of input.items) {
+    const item = normalizeResultEvidence(original);
+    validateResultEvidence(item);
     invariant(
       !seenItems.has(item.runItemId) && !seenLocal.has(item.localResultId),
       'RESULT_ID_CONFLICT',

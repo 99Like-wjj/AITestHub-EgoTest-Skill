@@ -144,52 +144,6 @@ export class ExecutionClaim {
     await this.save({ ...state, status: 'acknowledged', receipt });
     return store;
   }
-  async dispatch(
-    explicitOriginalReplayReason?: string,
-  ): Promise<ExecutionStore> {
-    return this.workspace.withExclusive(this.stateKey, async () => {
-      const state = await this.load();
-      if (state.status === 'acknowledged')
-        return this.accept(state.receipt, state);
-      invariant(
-        state.status === 'prepared' ||
-          (['unknown', 'dispatched'].includes(state.status) &&
-            state.recovery !== undefined &&
-            explicitOriginalReplayReason?.trim()),
-        'CLAIM_RECOVERY_REQUIRED',
-        'Read the original claim status before an explicit same-key replay; never create a new run to bypass unknown.',
-      );
-      await this.save({ ...state, status: 'dispatched' });
-      try {
-        return await this.accept(
-          await this.call('ath_ui_executions', {
-            op: 'claim',
-            projectId: this.request.projectId,
-            input: {
-              sourceType: this.request.sourceType,
-              sourceRevisionId: this.request.sourceRevisionId,
-              localExecutionId: this.identity.localExecutionId,
-              executionProvenance: this.identity.executionProvenance,
-            },
-          }),
-          state,
-        );
-      } catch (error) {
-        const e = error as Partial<ClientFailure>;
-        await this.save({
-          ...state,
-          status:
-            e.certainty === 'knownFailed' || e.certainty === 'notDispatched'
-              ? 'rejected'
-              : 'unknown',
-        });
-        throw new LocalError(
-          safeErrorCode(error, 'CLAIM_OUTCOME_UNKNOWN'),
-          'Original claim is not acknowledged. Preserve this source/key; no browser action was started by this tool.',
-        );
-      }
-    });
-  }
   /** v2 entry only: an unconfirmed original can only be recovered, never replayed. */
   async dispatchKnownOriginal(
     explicitOriginalRetryReason?: string,

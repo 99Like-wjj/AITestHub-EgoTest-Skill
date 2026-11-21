@@ -15,6 +15,18 @@ export const time = z.iso.datetime({ offset: true });
 export type Outcome =
   'passed' | 'failed' | 'blocked' | 'inconclusive' | 'notExecuted';
 export type SideEffectCertainty = 'known' | 'unknown' | 'notApplicable';
+export interface StepObservation {
+  ordinal: number;
+  actual: string;
+  outcome?: Outcome | undefined;
+  evidenceRefs: string[];
+}
+export interface EvidenceGap {
+  ordinal?: number | undefined;
+  label: string;
+  state: 'notCaptured' | 'pendingUpload' | 'uploadFailed';
+  reason: string;
+}
 export interface ScopeItem {
   runItemId: string;
   caseId: string;
@@ -62,6 +74,8 @@ export interface ResultItem {
   actualObservations: string;
   sideEffectCertainty: SideEffectCertainty;
   evidenceRefs: string[];
+  stepObservations?: StepObservation[] | undefined;
+  evidenceGaps?: EvidenceGap[] | undefined;
   actualActions?: string[] | undefined;
   reason?: string | undefined;
   basis?: unknown[] | undefined;
@@ -130,9 +144,74 @@ export const scopeSchema = z.fromJSONSchema(
 export const evidenceSchema = platformSchema(
   'domain.evidenceManifestItemSchema',
 ) as z.ZodType<ManifestItem>;
-export const resultSchema = platformSchema(
-  'domain.resultItemSchema',
-) as z.ZodType<ResultItem>;
+export function normalizeResultEvidence(item: ResultItem): ResultItem {
+  const { stepObservations, evidenceGaps } = item;
+  if (stepObservations === undefined && evidenceGaps === undefined) return item;
+  return {
+    ...item,
+    ...(stepObservations === undefined
+      ? {}
+      : {
+          stepObservations: stepObservations.map((step) => ({
+            ...step,
+            actual: step.actual.trim(),
+            evidenceRefs: step.evidenceRefs ?? [],
+          })),
+        }),
+    ...(evidenceGaps === undefined
+      ? {}
+      : {
+          evidenceGaps: evidenceGaps.map((gap) => ({
+            ...gap,
+            label: gap.label.trim(),
+            reason: gap.reason.trim(),
+          })),
+        }),
+  };
+}
+export function validateResultEvidence(item: ResultItem, fixed?: ScopeItem) {
+  const observations = item.stepObservations ?? [],
+    gaps = item.evidenceGaps ?? [];
+  if (!observations.length && !gaps.length) return;
+  invariant(
+    new Set(observations.map((step) => step.ordinal)).size ===
+      observations.length,
+    'DUPLICATE_STEP_OBSERVATION',
+    'Record one original observation per frozen step.',
+  );
+  invariant(
+    observations.every((step) => step.actual.trim()) &&
+      gaps.every((gap) => gap.label.trim() && gap.reason.trim()),
+    'RESULT_EVIDENCE_TEXT_REQUIRED',
+    'Step observations and evidence gaps need non-blank text.',
+  );
+  const evidence = new Set(item.evidenceRefs);
+  invariant(
+    observations.every((step) =>
+      (step.evidenceRefs ?? []).every((ref) => evidence.has(ref)),
+    ),
+    'STEP_EVIDENCE_OUTSIDE_RESULT',
+    'Step evidence must be referenced by the same original result.',
+  );
+  if (fixed) {
+    const available = fixed.content.steps?.length ?? 0;
+    invariant(
+      observations.every((step) => step.ordinal <= available) &&
+        gaps.every(
+          (gap) => gap.ordinal === undefined || gap.ordinal <= available,
+        ),
+      'STEP_OUTSIDE_FROZEN_CASE',
+      'Step evidence must point to a frozen UI case step. Older cases can use an unnumbered gap.',
+    );
+  }
+}
+export const resultSchema = (
+  platformSchema('domain.resultItemSchema') as z.ZodType<ResultItem>
+).transform((item) => {
+  const normalized = normalizeResultEvidence(item);
+  validateResultEvidence(normalized);
+  return normalized;
+});
 export const receiptSchema = platformSchema(
   'domain.resultSubmissionReceiptSchema',
 ) as z.ZodType<Receipt>;
@@ -141,28 +220,34 @@ export const progressSchema = platformSchema(
 ) as z.ZodType<Progress>;
 export const submissionSchema = (
   platformSchema('domain.resultSubmissionSchema') as z.ZodType<Submission>
-).superRefine((x, ctx) => {
-  // Exported JSON Schema cannot represent the server's cross-field refinements.
-  const ids = [...x.items.map((y) => y.runItemId), ...x.notExecutedItemIds];
-  if (
-    new Set(ids).size !== ids.length ||
-    new Set(x.items.map((y) => y.localResultId)).size !== x.items.length
-  )
-    ctx.addIssue({
-      code: 'custom',
-      message: 'Duplicate/overlapping result identity.',
-    });
-  const refs = new Set(x.evidenceManifest.map((y) => y.localEvidenceId));
-  if (
-    refs.size !== x.evidenceManifest.length ||
-    x.items.some((y) => y.evidenceRefs.some((r) => !refs.has(r)))
-  )
-    ctx.addIssue({
-      code: 'custom',
-      message:
-        'Evidence references must be unique and present in this submission manifest.',
-    });
-});
+)
+  .transform((submission) => ({
+    ...submission,
+    items: submission.items.map(normalizeResultEvidence),
+  }))
+  .superRefine((x, ctx) => {
+    // Exported JSON Schema cannot represent the server's cross-field refinements.
+    for (const item of x.items) validateResultEvidence(item);
+    const ids = [...x.items.map((y) => y.runItemId), ...x.notExecutedItemIds];
+    if (
+      new Set(ids).size !== ids.length ||
+      new Set(x.items.map((y) => y.localResultId)).size !== x.items.length
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Duplicate/overlapping result identity.',
+      });
+    const refs = new Set(x.evidenceManifest.map((y) => y.localEvidenceId));
+    if (
+      refs.size !== x.evidenceManifest.length ||
+      x.items.some((y) => y.evidenceRefs.some((r) => !refs.has(r)))
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Evidence references must be unique and present in this submission manifest.',
+      });
+  });
 
 export function scope(value: unknown): ExecutionScope {
   assertNoSecrets(value);

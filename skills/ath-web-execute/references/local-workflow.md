@@ -1,39 +1,20 @@
 # 本地工具与固定范围
 
-**0.1.0历史接口说明。** 0.2.0新执行使用 [v2交付](v2-delivery.md) 和 `runV2LocalCommand`；旧未知journal使用保留的0.1.0完整包恢复，不用新包清空、迁移或换ID重发。
+可信宿主通过 `scripts/runtime/index.mjs` 的 `runV2LocalCommand(ports, request)` 使用当前执行入口。相邻声明文件提供注入端口类型。工作根放在仓库外，按已核实宿主身份隔离。宿主提供路径与符号链接保护、原子写和排他锁。请求 JSON 无法指定鉴权、HTTP 地址、工作根或动态适配器。
 
-读取时机：首次执行、原run恢复或需要调用本地工具时。
+本地诊断使用 `node scripts/tool.mjs tool-info`。离线结构核验使用 `validate-scope`、`validate-batch` 或 `validate-archive`，各读取一个明确选择的 JSON 文件。原 v1 资料按对应原包核对，保留账本和回执。
 
-## 工具与host
+| 命令 | 用途 |
+| --- | --- |
+| `claim-prepare` | 持久保存原 `localExecutionId` 和来源，请求尚未发送 |
+| `claim-dispatch`、`claim-recover` | 领取固定范围，或查原操作。仅已知未成功的原请求可按规则显式重试 |
+| `freeze`、`summary`、`read-case` | 固定已取得的范围，查看本轮和固定单项 |
+| `begin-action`、`action-status`、`observe` | 记录原动作意图、发送确定性和真实观察 |
+| `index-evidence`、`upload-evidence`、`recover-file` | 索引原文件，获取同一文件的登记与核验回执 |
+| `record-result`、`record-not-executed` | 保存本项真实结论或从未执行的原因 |
+| `prepare-delivery`、`v2-status` 等 | 按 [v2交付契约](v2-delivery.md) 准备原批次，查原回执及结束状态 |
 
-`scripts/runtime/index.mjs` 导出稳定入口 `runLocalCommand(ports, request)`，相邻index.d.mts提供不依赖Zod的host类型。共同可信host注入 `ToolPort / ResultPort / WorkspacePort / FileChannelPort / privateRoot / principal{actorId,platformOrigin}`；principal来自host已核身份，不来自请求。请求JSON不能指定HTTP地址、鉴权、工作根或动态adapter。host须将工作根放仓库外并按当前Actor隔离，提供路径/符号链接保护、原子写与排他锁；请求/原账本身份不符则拒绝，不将请求actorId当授权。当前host尚未随本包提供，不绕过它另写fetch、SDK或读取Key。其他JavaScript低层类用于内部诊断，不作为模型另接不受控host的入口。
-
-本地诊断：`node scripts/tool.mjs tool-info`；结构验证：`validate-scope <已选择的JSON路径>` 或 `validate-submission <路径>`。它们不调用平台、不执行SUT，输出不回显源正文。
-
-## 常用命令
-
-| 命令                              | 输入核心                                                                                               | 作用                                                                                             |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| claim-prepare                     | identity + request{projectId,sourceType,sourceRevisionId}                                              | 持久化原localExecutionId与来源；不会领取                                                         |
-| claim-dispatch / claim-recover    | 同identity/request；重传须replayReason                                                                 | 调用真实claim或只读原operation账；返回同run                                                      |
-| freeze                            | identity + 原scope                                                                                     | 导入已取得scope；hash仅完整性，不证明批准/授权                                                   |
-| summary / read-case               | runId；后者runItemId                                                                                   | 查看本地状态/固定单项，不重新选版                                                                |
-| begin-action                      | input{runItemId,summary,sideEffect:none/possible}                                                      | 记录意图并返回actionId，不控制Ego                                                                |
-| action-status                     | actionId,status,reason                                                                                 | 实际发送前标dispatched；观察后observed/unknown/notOccurred                                       |
-| observe                           | input{runItemId,summary,evidenceIds,phase,observedAt?}                                                 | 记录真实before/after/reconciliation；时间不明不补造执行时间                                      |
-| index-evidence                    | input{localEvidenceId,relativePath,originalName,mediaType,type,captureCompleteness,source,capturedAt?} | inspect原字节后保存hash/bytes；不证明图片语境                                                    |
-| upload-evidence / recover-file    | localEvidenceId；重传须retransmissionReason                                                            | 登记身份先落盘、完整PUT、同文件恢复；不是SUT上传动作                                             |
-| record-result                     | input{item,observationIds,unresolvedActionIds,evidenceGap?}                                            | AI提供业务结论，原始本地记录不可静默覆盖                                                         |
-| prepare-progress                  | summary,final?                                                                                         | 每约10已执行项准备原sequence/timestamp；不自动发                                                 |
-| prepare-results                   | input{completion,endedAt?,notExecutedItemIds?,allowPendingFiles?}                                      | 构造精确完整载荷/outbox；不自动补未执行或发请求                                                  |
-| inspect-outbox / remote-preflight | outboxId                                                                                               | 查看冻结载荷/平台prepare预检；预检不替代提交授权                                                 |
-| export-result-json                | outboxId                                                                                               | 将原冻结载荷保存为UTF-8 JSON并索引；同路径不同字节拒绝覆盖                                       |
-| attach-result-json                | outboxId,localEvidenceId                                                                               | 原JSON upload-evidence verified后，在首次dispatch前固定submit-file通道；原submission/payload不变 |
-| dispatch / recover                | outboxId；重传须replayReason                                                                           | 原载荷提交或只读receipt；无通用自动retry                                                         |
-
-`runId`适用于表中除claim/freeze以外的命令。真实输入结构以包内契约快照为准。`item`沿平台resultItem字段：runItemId/localResultId/originalOutcome/actualObservations/sideEffectCertainty/evidenceRefs，可加actualActions/reason/basis/真实时间。观察与未决action必须属于该固定项；passed/failed缺关键截图须显式evidenceGap{reason,impact}。结论仍由AI负责，校验通过不是业务通过。
-
-完整原JSON流程：prepare-results → export-result-json → upload-evidence（导出返回的localEvidenceId）→ attach-result-json → dispatch。登记/上传未知先recover-file，不能跳过verified。文件通道提交与直接body提交共用原submissionId和同一receipt语义；原JSON额外计入1GiB预算。文件提交不是D01的容量替代方案。
+已有固定范围的操作使用原 `runId`。提交本地结果时提供 `item`、`observationIds` 和 `unresolvedActionIds`。已通过或失败的用例缺关键截图时，在 `item.evidenceGaps` 明确写下缺口、状态和原因。观察、在途动作和步骤证据都关联同一个固定用例。原始结论不可静默覆盖。
 
 ## 本地文件
 

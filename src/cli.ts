@@ -2,11 +2,12 @@ import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, relative, isAbsolute } from 'node:path';
 import { parseJson, bytesHash, assertNoSecrets } from './canonical.js';
-import { scope, submissionSchema } from './contracts.js';
+import { scope } from './contracts.js';
 import { LocalError, invariant } from './errors.js';
 import { readV2, type ResultBatch } from './v2-contracts.js';
 import { exportUiArchive } from './archives.js';
 import { assertBatchBudget } from './v2-planner.js';
+import { stepEvidenceContract } from './result-evidence-contract.js';
 
 export async function toolInfo(skillRoot: string) {
   const manifest = parseJson(
@@ -57,6 +58,7 @@ export async function toolInfo(skillRoot: string) {
   );
   return {
     manifest,
+    stepEvidenceContract,
     integrity: {
       valid:
         checks.length > 0 &&
@@ -102,9 +104,7 @@ export async function main(
     return;
   }
   invariant(
-    ['validate-scope', 'validate-submission', 'validate-batch'].includes(
-      command ?? '',
-    ),
+    command === 'validate-scope' || command === 'validate-batch',
     'HOST_BINDING_REQUIRED',
     'Use offline validation or the trusted host calling runV2LocalCommand with injected ports.',
   );
@@ -116,12 +116,7 @@ export async function main(
   const value = parseJson(await readFile(resolve(args[1]!), 'utf8'));
   assertNoSecrets(value);
   const checked =
-    command === 'validate-scope'
-      ? scope(value)
-      : command === 'validate-batch'
-        ? readV2<ResultBatch>('uiResultBatchSchema', value)
-        : submissionSchema.parse(value);
-  if (command === 'validate-batch') assertBatchBudget(checked as ResultBatch);
+    command === 'validate-scope' ? scope(value) : parseBatch(value);
   process.stdout.write(
     JSON.stringify({
       valid: true,
@@ -131,6 +126,11 @@ export async function main(
       validationOnly: true,
     }) + '\n',
   );
+}
+function parseBatch(value: unknown) {
+  const batch = readV2<ResultBatch>('uiResultBatchSchema', value);
+  assertBatchBudget(batch);
+  return batch;
 }
 export async function runCli(args: string[], skillRoot?: string) {
   try {

@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import snapshot from '../contracts/ba61508f-642a-49a6-b909-5cd81c4bde0e.json' with { type: 'json' };
 import { invariant } from './errors.js';
+import {
+  withResultEvidence,
+  resultEvidenceToolLeaves,
+} from './result-evidence-contract.js';
 
 const cache = new Map<string, z.ZodType>();
 type SchemaNode = Record<string, unknown>;
@@ -70,8 +74,14 @@ export function platformSchema(name: string): z.ZodType {
     'CONTRACT_NOT_AVAILABLE',
     'Required component is absent from the vendored platform snapshot.',
   );
+  const enriched = withResultEvidence(
+    json,
+    ['domain.resultItemSchema', 'domain.resultSubmissionSchema'].includes(name)
+      ? 1
+      : 0,
+  );
   const schema = z.fromJSONSchema(
-    json as Parameters<typeof z.fromJSONSchema>[0],
+    enriched as Parameters<typeof z.fromJSONSchema>[0],
   );
   cache.set(name, schema);
   return schema;
@@ -112,7 +122,11 @@ export function validateToolInput(name: string, value: unknown): void {
       'Tool op is not present in this contract artifact.',
     );
     const compiled = choices.map((x) =>
-      z.fromJSONSchema(x as Parameters<typeof z.fromJSONSchema>[0]),
+      z.fromJSONSchema(
+        withResultEvidence(x, resultEvidenceToolLeaves(name, op)) as Parameters<
+          typeof z.fromJSONSchema
+        >[0],
+      ),
     );
     schema =
       compiled.length === 1

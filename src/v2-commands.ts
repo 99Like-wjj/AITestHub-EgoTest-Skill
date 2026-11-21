@@ -1,28 +1,62 @@
 import { z } from 'zod';
 import { id, localId, identitySchema } from './contracts.js';
 import { ExecutionClaim, claimRequestSchema } from './claim.js';
-import { ExecutionClient } from './client.js';
+import type { RuntimePorts } from './client.js';
+import type { WorkspacePort } from './ports.js';
 import { assertNoSecrets } from './canonical.js';
 import { invariant, LocalError, safeErrorCode } from './errors.js';
-import { runLocalCommand, type CommandPorts } from './commands.js';
 import { ExecutionStore } from './store.js';
 import { V2Workspace } from './v2-workspace.js';
 import { V2ExecutionClient } from './v2-client.js';
-import { resolve } from 'node:path';
 
-const commonLocal = new Set([
-  'claim-prepare',
-  'claim-recover',
-  'freeze',
-  'read-case',
-  'action-status',
-  'observe',
-  'index-evidence',
-  'upload-evidence',
-  'recover-file',
-]);
+export type CommandPorts = RuntimePorts & {
+  workspace: WorkspacePort;
+  principal: { actorId: string; platformOrigin: string };
+};
+const claimInput = { identity: identitySchema, request: claimRequestSchema };
 const command = z.discriminatedUnion('command', [
+  z.strictObject({ command: z.literal('claim-prepare'), ...claimInput }),
+  z.strictObject({ command: z.literal('claim-recover'), ...claimInput }),
+  z.strictObject({
+    command: z.literal('claim-dispatch'),
+    ...claimInput,
+    replayReason: z.string().min(1).optional(),
+  }),
+  z.strictObject({
+    command: z.literal('freeze'),
+    identity: identitySchema,
+    scope: z.unknown(),
+  }),
   z.strictObject({ command: z.literal('summary'), runId: id }),
+  z.strictObject({ command: z.literal('read-case'), runId: id, runItemId: id }),
+  z.strictObject({
+    command: z.literal('action-status'),
+    runId: id,
+    actionId: id,
+    status: z.enum(['dispatched', 'observed', 'unknown', 'notOccurred']),
+    reason: z.string().optional(),
+  }),
+  z.strictObject({
+    command: z.literal('observe'),
+    runId: id,
+    input: z.unknown(),
+  }),
+  z.strictObject({
+    command: z.literal('index-evidence'),
+    runId: id,
+    input: z.unknown(),
+  }),
+  z.strictObject({
+    command: z.literal('upload-evidence'),
+    runId: id,
+    localEvidenceId: localId,
+    retransmissionReason: z.string().min(1).optional(),
+  }),
+  z.strictObject({
+    command: z.literal('recover-file'),
+    runId: id,
+    localEvidenceId: localId,
+  }),
   z.strictObject({
     command: z.literal('begin-action'),
     runId: id,
@@ -112,12 +146,6 @@ const command = z.discriminatedUnion('command', [
     final: z.boolean().default(false),
   }),
 ]);
-const claimDispatch = z.strictObject({
-  command: z.literal('claim-dispatch'),
-  identity: identitySchema,
-  request: claimRequestSchema,
-  replayReason: z.string().min(1).optional(),
-});
 
 /** New default host entry. It cannot select credentials/transport/root or run Ego/SUT itself. */
 export async function runV2LocalCommand(
@@ -141,53 +169,65 @@ export async function runV2LocalCommand(
       'LEGACY_COMMAND_UNSUPPORTED',
       'Use the preserved original package for v1 commands/journals; v2 uses explicit v2 batch transactions.',
     );
-    if (name === 'claim-dispatch') {
-      const request = claimDispatch.parse(raw),
-        principal = identitySchema
-          .pick({ actorId: true, platformOrigin: true })
-          .parse(ports.principal);
+    const request = command.parse(raw);
+    const principal = identitySchema
+      .pick({ actorId: true, platformOrigin: true })
+      .parse(ports.principal);
+    const workspace = new V2Workspace(ports.workspace);
+    if ('identity' in request) {
       invariant(
         request.identity.actorId === principal.actorId &&
           request.identity.platformOrigin === principal.platformOrigin,
         'OWNER_MISMATCH',
         'Request identity does not match the trusted host principal.',
       );
-      const scopedPorts = {
-          ...ports,
-          workspace: new V2Workspace(ports.workspace),
-          privateRoot: resolve(ports.privateRoot, 'v2'),
-        },
-        claim = new ExecutionClaim(
-          scopedPorts.workspace,
+      let value: unknown;
+      if (request.command === 'freeze') {
+        const client = await V2ExecutionClient.freeze(
+          ports,
+          request.identity,
+          request.scope,
+        );
+        value = await client.summary();
+      } else {
+        const claim = new ExecutionClaim(
+          workspace,
           ports.tool,
           ports.result,
           request.identity,
           request.request,
-        ),
-        store = await claim.dispatchKnownOriginal(request.replayReason),
-        value = await new ExecutionClient(store, scopedPorts).summary();
+        );
+        switch (request.command) {
+          case 'claim-prepare': {
+            const state = await claim.prepare();
+            value = {
+              status: state.status,
+              requestDigest: state.requestDigest,
+              localExecutionId: state.identity.localExecutionId,
+            };
+            break;
+          }
+          case 'claim-recover':
+            value = await claim.recover();
+            break;
+          case 'claim-dispatch': {
+            const store = await claim.dispatchKnownOriginal(
+              request.replayReason,
+            );
+            value = await new V2ExecutionClient(store, ports).summary();
+            break;
+          }
+        }
+      }
       ports.result.assertSafe(value);
       return value;
     }
-    if (commonLocal.has(name))
-      return await runLocalCommand(
-        {
-          ...ports,
-          workspace: new V2Workspace(ports.workspace),
-          privateRoot: resolve(ports.privateRoot, 'v2'),
-        },
-        raw,
-      );
-    const request = command.parse(raw),
-      store = new ExecutionStore(
-        new V2Workspace(ports.workspace),
-        request.runId,
-      ),
-      client = new V2ExecutionClient(store, ports);
+    const store = new ExecutionStore(workspace, request.runId);
+    const client = new V2ExecutionClient(store, ports);
     const view = await store.read();
     invariant(
-      view.identity.actorId === ports.principal.actorId &&
-        view.identity.platformOrigin === ports.principal.platformOrigin,
+      view.identity.actorId === principal.actorId &&
+        view.identity.platformOrigin === principal.platformOrigin,
       'OWNER_MISMATCH',
       'Local journal is owned by another host principal.',
     );
@@ -195,6 +235,49 @@ export async function runV2LocalCommand(
     switch (request.command) {
       case 'summary':
         value = await client.summary();
+        break;
+      case 'read-case': {
+        const item = view.scope.items.find(
+          (entry) => entry.runItemId === request.runItemId,
+        );
+        invariant(item, 'OUTSIDE_SCOPE', 'Item is outside this frozen scope.');
+        value = {
+          item,
+          result: view.results.get(request.runItemId) ?? null,
+          observations: [...view.observations.values()].filter(
+            (entry) => entry.runItemId === request.runItemId,
+          ),
+        };
+        break;
+      }
+      case 'action-status':
+        await store.actionStatus(
+          request.actionId,
+          request.status,
+          request.reason,
+        );
+        value = { recorded: true };
+        break;
+      case 'observe':
+        value = {
+          observationId: await store.observe(
+            request.input as Parameters<ExecutionStore['observe']>[0],
+          ),
+        };
+        break;
+      case 'index-evidence':
+        value = await client.indexEvidence(
+          request.input as Parameters<V2ExecutionClient['indexEvidence']>[0],
+        );
+        break;
+      case 'upload-evidence':
+        value = await client.uploadEvidence(
+          request.localEvidenceId,
+          request.retransmissionReason,
+        );
+        break;
+      case 'recover-file':
+        value = await client.recoverEvidence(request.localEvidenceId);
         break;
       case 'begin-action':
         value = {
