@@ -110,6 +110,10 @@ export class V2ExecutionClient {
     await this.view();
     return this.files.recoverEvidence(localEvidenceId);
   }
+  async verifyEvidence(localEvidenceId: string) {
+    await this.view();
+    return this.files.verifyEvidence(localEvidenceId);
+  }
 
   private checkStatus(value: unknown): DeliveryStatus {
     const status = readV2<DeliveryStatus>('uiDeliveryStatusSchema', value);

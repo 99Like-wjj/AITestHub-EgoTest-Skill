@@ -7,7 +7,10 @@ import { LocalError, invariant } from './errors.js';
 import { readV2, type ResultBatch } from './v2-contracts.js';
 import { exportUiArchive } from './archives.js';
 import { assertBatchBudget } from './v2-planner.js';
-import { stepEvidenceContract } from './result-evidence-contract.js';
+import {
+  stepEvidenceContract,
+  resultQualityContract,
+} from './result-evidence-contract.js';
 
 export async function toolInfo(skillRoot: string) {
   const manifest = parseJson(
@@ -59,6 +62,7 @@ export async function toolInfo(skillRoot: string) {
   return {
     manifest,
     stepEvidenceContract,
+    resultQualityContract,
     integrity: {
       valid:
         checks.length > 0 &&

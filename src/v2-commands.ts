@@ -58,6 +58,11 @@ const command = z.discriminatedUnion('command', [
     localEvidenceId: localId,
   }),
   z.strictObject({
+    command: z.literal('verify-evidence'),
+    runId: id,
+    localEvidenceId: localId,
+  }),
+  z.strictObject({
     command: z.literal('begin-action'),
     runId: id,
     input: z.unknown(),
@@ -278,6 +283,9 @@ export async function runV2LocalCommand(
         break;
       case 'recover-file':
         value = await client.recoverEvidence(request.localEvidenceId);
+        break;
+      case 'verify-evidence':
+        value = await client.verifyEvidence(request.localEvidenceId);
         break;
       case 'begin-action':
         value = {

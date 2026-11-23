@@ -1,4 +1,5 @@
 import overlay from '../contracts/step-evidence-v1.json' with { type: 'json' };
+import qualityOverlay from '../contracts/result-quality-v1.json' with { type: 'json' };
 import { invariant } from './errors.js';
 
 type Node = Record<string, unknown>;
@@ -19,17 +20,20 @@ export const stepEvidenceContract = {
   schemaVersion: overlay.schemaVersion,
   ...overlay.source,
 };
+export const resultQualityContract = {
+  schemaVersion: qualityOverlay.schemaVersion,
+  ...qualityOverlay.source,
+};
 
-// Augment only the exact result leaf or its descriptor core. Frozen artifacts
-// remain unchanged, including strict unknown-property rejection everywhere else.
-export function withResultEvidence(
+function addProperties(
   schema: unknown,
   expected: number,
-  identity: 'runItemId' | 'localItemId' = 'runItemId',
+  matches: (properties: Node) => boolean,
+  extensions: Node,
 ): unknown {
   if (expected === 0) return schema;
   const copy = structuredClone(schema);
-  let matches = 0;
+  let count = 0;
   function visit(value: unknown) {
     if (Array.isArray(value)) {
       for (const entry of value) visit(entry);
@@ -41,30 +45,67 @@ export function withResultEvidence(
       node.type === 'object' &&
       node.additionalProperties === false &&
       node.properties !== null &&
-      typeof node.properties === 'object'
+      typeof node.properties === 'object' &&
+      matches(node.properties as Node)
     ) {
-      const keys = Object.keys(node.properties);
-      if (
-        legacyFields.every((key) =>
-          keys.includes(key === 'runItemId' ? identity : key),
-        ) &&
-        keys.length ===
-          legacyFields.length + Number(keys.includes('evidenceRefs'))
-      ) {
-        node.properties = { ...node.properties, ...overlay.properties };
-        matches++;
-        return;
-      }
+      node.properties = { ...node.properties, ...extensions };
+      count++;
+      return;
     }
     for (const child of Object.values(node)) visit(child);
   }
   visit(copy);
   invariant(
-    matches === expected,
-    'STEP_EVIDENCE_CONTRACT_MISMATCH',
-    'The frozen result contract no longer matches the reviewed step evidence extension.',
+    count === expected,
+    'RESULT_CONTRACT_MISMATCH',
+    'Reviewed result extensions do not match the preserved contract.',
   );
   return copy;
+}
+
+const frozenUiCaseProperties = [
+  'kind',
+  'scenarioId',
+  'title',
+  'testPoint',
+  'preconditions',
+  'steps',
+  'expected',
+  'basisRefs',
+];
+
+export function withCaseAssertions(schema: unknown): unknown {
+  return addProperties(
+    schema,
+    1,
+    (properties) =>
+      typeof properties.kind === 'object' &&
+      properties.kind !== null &&
+      (properties.kind as Node).const === 'UI' &&
+      Object.keys(properties).length === frozenUiCaseProperties.length &&
+      frozenUiCaseProperties.every((field) => field in properties),
+    qualityOverlay.properties.case,
+  );
+}
+
+// Augment only the exact result leaf or its descriptor core. Frozen artifacts
+// remain unchanged, including strict unknown-property rejection everywhere else.
+export function withResultEvidence(
+  schema: unknown,
+  expected: number,
+  identity: 'runItemId' | 'localItemId' = 'runItemId',
+): unknown {
+  return addProperties(
+    schema,
+    expected,
+    (properties) =>
+      legacyFields.every(
+        (key) => (key === 'runItemId' ? identity : key) in properties,
+      ) &&
+      Object.keys(properties).length ===
+        legacyFields.length + Number('evidenceRefs' in properties),
+    { ...overlay.properties, ...qualityOverlay.properties.result },
+  );
 }
 
 export function resultEvidenceToolLeaves(name: string, op: string) {

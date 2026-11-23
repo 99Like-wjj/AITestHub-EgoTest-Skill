@@ -1,0 +1,182 @@
+{
+  "schemaVersion": "ath.result-quality-overlay.v1",
+  "source": {
+    "path": "packages/contracts/src/domain.ts",
+    "components": [
+      "domain.uiCaseContentSchema",
+      "domain.resultItemSchema"
+    ],
+    "sha256": "c8aa2c0abb03612f4a2a3786d5ad2cd424bdff0035ddebbe0bf2753492ffede3"
+  },
+  "properties": {
+    "case": {
+      "assertions": {
+        "minItems": 1,
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "expected": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10000
+            },
+            "evidenceHint": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "id",
+            "expected"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "result": {
+      "observations": {
+        "maxItems": 1000,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "actual": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10000
+            },
+            "assertionIds": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "stepOrdinals": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "actionOrdinals": {
+              "maxItems": 1000,
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000
+              }
+            },
+            "evidenceRefs": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            }
+          },
+          "required": [
+            "actual"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "assertionResults": {
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "assertionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "passed",
+                "failed",
+                "blocked",
+                "inconclusive",
+                "notExecuted"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10000
+            }
+          },
+          "required": [
+            "assertionId",
+            "outcome"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "evidenceGaps": {
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "ordinal": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "assertionIds": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "notCaptured",
+                "pendingUpload",
+                "uploadFailed"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "label",
+            "state",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

@@ -10,7 +10,9 @@ unknown/dispatched claim不能因`replayReason`、当前404或同key幂等而再
 
 `record-result.input.item` 可带 `stepObservations`，每项包含冻结步骤从 1 开始的 `ordinal`、可复现的实际观察 `actual`、可选 `outcome` 和 `evidenceRefs`。步骤证据使用同一结果已登记的 `localEvidenceId`，也列入结果自己的 `evidenceRefs`。同一阶段有多条观察时，原始事实保存在 `observe` 记录，结果内按冻结步骤汇总为一项。上传前核对证据公开范围，按实际观察填写，不补造位置、时间或判断。
 
-缺证在 `item.evidenceGaps` 写明名称 `label`、`state` 和 `reason`，可用 `ordinal` 定位冻结步骤。`notCaptured` 表示没有采集，`pendingUpload` 表示真实文件已保留但还未交付，`uploadFailed` 表示已确认传输失败。上传结果未知时先查原回执。整项缺口可省略步骤序号。选择证据上报时保留原字节和真实引用，仍按本节文件规则核验。新结构随内联批次、原批 JSON 和 descriptor 核心一同交付，使用具备步骤证据契约的平台和可信宿主客户端。
+业务断言与现场实际动作按 [结果与证据标准](result-quality.md) 写入 `observations`、`assertionResults` 和 `actualActions`。新增结构随内联批次、原批 JSON 和 descriptor 核心一同交付。发送前核对平台和可信宿主客户端支持当前字段。
+
+缺证在 `item.evidenceGaps` 写明名称 `label`、`state` 和 `reason`，可用 `ordinal` 定位冻结步骤，以 `assertionIds` 关联需要证明的断言。`notCaptured` 表示没有采集，`pendingUpload` 表示真实文件已保留但还未交付，`uploadFailed` 表示已确认传输失败。上传结果未知时先查原回执。整项缺口可省略步骤序号。需要核验字节时以相同 `localEvidenceId` 运行 `verify-evidence`，核对保留原件及平台同一已登记文件的实际下载字节。
 
 `prepare-delivery`只处理已记录且未进入其他plan的原结果，或显式选择runItemIds。确定性分批器按100 involved证据身份/唯一resource UUID字节/原JSON预算分组，同run可累计多批。一个Case超过100引用用冻结descriptor与refs片段，不把文件切字节；fullRefsDigest/itemDigest/位置沿原顺序，所有图保留。
 

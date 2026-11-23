@@ -15,6 +15,7 @@ import {
 } from './contracts.js';
 import type { ExecutionScope, Identity, ResultItem } from './contracts.js';
 import type { WorkspacePort } from './ports.js';
+import { validateRecordedResultQuality } from './result-quality.js';
 
 const zero = '0'.repeat(64);
 function ledgerJson(value: unknown) {
@@ -634,6 +635,7 @@ export class ExecutionStore {
         'OBSERVATION_REQUIRED',
         'Actual execution needs a real observation record.',
       );
+      const observedEvidence = new Set<string>();
       for (const o of x.observationIds) {
         const obs = v.observations.get(o);
         invariant(
@@ -646,6 +648,8 @@ export class ExecutionStore {
           'EVIDENCE_OMITTED',
           'Result must retain evidence from its referenced observations.',
         );
+        for (const evidenceId of obs.evidenceIds)
+          observedEvidence.add(evidenceId);
       }
       for (const e of x.item.evidenceRefs)
         invariant(
@@ -672,17 +676,12 @@ export class ExecutionStore {
           'UNKNOWN_EFFECT_OMITTED',
           'Unresolved actions require unknown side-effect certainty.',
         );
-      if (
-        ['passed', 'failed'].includes(x.item.originalOutcome) &&
-        !x.item.evidenceRefs.some(
-          (e) => v.evidence.get(e)?.type === 'screenshot',
-        )
-      )
-        invariant(
-          x.item.evidenceGaps?.length,
-          'SCREENSHOT_OR_GAP_REQUIRED',
-          'Record a real key screenshot or explicitly record missing evidence in item.evidenceGaps.',
-        );
+      validateRecordedResultQuality(
+        x.item,
+        fixed,
+        observedEvidence,
+        v.evidence,
+      );
       await emit('result', x);
     });
   }

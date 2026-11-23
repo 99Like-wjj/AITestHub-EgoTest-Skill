@@ -64,6 +64,10 @@ await copyFile(
   resolve(root, 'contracts/step-evidence-v1.json'),
   resolve(skill, 'contracts/step-evidence-v1.json'),
 );
+await copyFile(
+  resolve(root, 'contracts/result-quality-v1.json'),
+  resolve(skill, 'contracts/result-quality-v1.json'),
+);
 await copyFile(resolve(root, 'LICENSE'), resolve(skill, 'LICENSE'));
 await mkdir(resolve(skill, 'third-party/zod'), { recursive: true });
 await copyFile(
@@ -108,8 +112,10 @@ allowed.add('contracts/v2-provenance.json');
 allowed.add(`contracts/${v2Provenance.derivative.path}`);
 allowed.add('references/v2-delivery.md');
 allowed.add('references/independent-archives.md');
+allowed.add('references/result-quality.md');
 allowed.add('contracts/archive-v1.json');
 allowed.add('contracts/step-evidence-v1.json');
+allowed.add('contracts/result-quality-v1.json');
 for (const file of (await files(skill)).sort()) {
   const name = relative(skill, file).replaceAll('\\', '/');
   if (!allowed.has(name)) throw new Error(`Unexpected package entry: ${name}`);

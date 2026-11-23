@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { isAbsolute, resolve, relative, sep } from 'node:path';
 import { z } from 'zod';
 import { digest } from './canonical.js';
@@ -210,6 +211,45 @@ export class EvidenceFileClient {
         sha256: e.sha256,
       });
     return value;
+  }
+  async verifyEvidence(localEvidenceId: string) {
+    const view = await this.store.read();
+    const original = view.evidence.get(localEvidenceId);
+    invariant(
+      original?.upload === 'verified' && original.fileId,
+      'EVIDENCE_NOT_VERIFIED',
+      'Readback needs the original verified file receipt. Reconcile pending uploads first.',
+    );
+    const local = await this.ports.files.inspectFile(
+      this.evidencePath(original.relativePath),
+    );
+    invariant(
+      local.bytes === original.bytes && local.sha256 === original.sha256,
+      'LOCAL_EVIDENCE_CHANGED',
+      'The indexed evidence differs from the retained local file.',
+    );
+    const key = `evidence/readback/${randomUUID()}.bin`;
+    const downloaded = await this.ports.files.downloadToFile({
+      projectId: view.scope.projectId,
+      sourcePath: `/api/v1/files/${original.fileId}/content`,
+      destinationPath: this.evidencePath(key),
+      expected: local,
+    });
+    invariant(
+      downloaded.expectedIntegrityMatched &&
+        downloaded.bytes === local.bytes &&
+        downloaded.sha256 === local.sha256,
+      'FILE_DIGEST_MISMATCH',
+      'Readback bytes differ from the indexed original.',
+    );
+    return {
+      localEvidenceId,
+      fileId: original.fileId,
+      bytes: downloaded.bytes,
+      sha256: downloaded.sha256,
+      readbackRelativePath: key,
+      originalBytesMatched: true,
+    };
   }
   private safeFailure(error: unknown): LocalError {
     const e = error as Partial<ClientFailure>;

@@ -3,6 +3,7 @@ import archiveContract from '../contracts/archive-v1.json' with { type: 'json' }
 import { digest, assertNoSecrets } from './canonical.js';
 import { invariant } from './errors.js';
 import { platformSchema } from './platform-schema.js';
+import { withCaseAssertions } from './result-evidence-contract.js';
 
 // Local primitives describe bookkeeping. Platform validation comes from the
 // immutable exported JSON Schema, not a second hand-maintained runtime schema.
@@ -26,6 +27,24 @@ export interface EvidenceGap {
   label: string;
   state: 'notCaptured' | 'pendingUpload' | 'uploadFailed';
   reason: string;
+  assertionIds?: string[] | undefined;
+}
+export interface CaseAssertion {
+  id: string;
+  expected: string;
+  evidenceHint?: string | undefined;
+}
+export interface ResultObservation {
+  actual: string;
+  assertionIds?: string[] | undefined;
+  stepOrdinals?: number[] | undefined;
+  actionOrdinals?: number[] | undefined;
+  evidenceRefs?: string[] | undefined;
+}
+export interface AssertionResult {
+  assertionId: string;
+  outcome: Outcome;
+  reason?: string | undefined;
 }
 export interface ScopeItem {
   runItemId: string;
@@ -48,6 +67,7 @@ export interface ScopeItem {
     scenarioId: string;
     title: string;
     steps?: { action: string; expected?: string | undefined }[];
+    assertions?: CaseAssertion[];
     [key: string]: unknown;
   };
   [key: string]: unknown;
@@ -75,6 +95,8 @@ export interface ResultItem {
   sideEffectCertainty: SideEffectCertainty;
   evidenceRefs: string[];
   stepObservations?: StepObservation[] | undefined;
+  observations?: ResultObservation[] | undefined;
+  assertionResults?: AssertionResult[] | undefined;
   evidenceGaps?: EvidenceGap[] | undefined;
   actualActions?: string[] | undefined;
   reason?: string | undefined;
@@ -137,16 +159,16 @@ export interface Progress {
 // Types are a consumed-field view; JSON Schema is the structural runtime authority.
 // Server refinements/CAS/ACL remain authoritative.
 export const scopeSchema = z.fromJSONSchema(
-  archiveContract.schemas.executionScopeSchema as Parameters<
-    typeof z.fromJSONSchema
-  >[0],
+  withCaseAssertions(
+    archiveContract.schemas.executionScopeSchema,
+  ) as Parameters<typeof z.fromJSONSchema>[0],
 );
 export const evidenceSchema = platformSchema(
   'domain.evidenceManifestItemSchema',
 ) as z.ZodType<ManifestItem>;
 export function normalizeResultEvidence(item: ResultItem): ResultItem {
-  const { stepObservations, evidenceGaps } = item;
-  if (stepObservations === undefined && evidenceGaps === undefined) return item;
+  const { stepObservations, evidenceGaps, observations, assertionResults } =
+    item;
   return {
     ...item,
     ...(stepObservations === undefined
@@ -156,6 +178,24 @@ export function normalizeResultEvidence(item: ResultItem): ResultItem {
             ...step,
             actual: step.actual.trim(),
             evidenceRefs: step.evidenceRefs ?? [],
+          })),
+        }),
+    ...(observations === undefined
+      ? {}
+      : {
+          observations: observations.map((entry) => ({
+            ...entry,
+            actual: entry.actual.trim(),
+          })),
+        }),
+    ...(assertionResults === undefined
+      ? {}
+      : {
+          assertionResults: assertionResults.map((entry) => ({
+            ...entry,
+            ...(entry.reason === undefined
+              ? {}
+              : { reason: entry.reason.trim() }),
           })),
         }),
     ...(evidenceGaps === undefined
@@ -170,40 +210,97 @@ export function normalizeResultEvidence(item: ResultItem): ResultItem {
   };
 }
 export function validateResultEvidence(item: ResultItem, fixed?: ScopeItem) {
-  const observations = item.stepObservations ?? [],
-    gaps = item.evidenceGaps ?? [];
-  if (!observations.length && !gaps.length) return;
+  const steps = item.stepObservations ?? [];
+  const gaps = item.evidenceGaps ?? [];
+  const observations = item.observations ?? [];
+  const assertionResults = item.assertionResults ?? [];
   invariant(
-    new Set(observations.map((step) => step.ordinal)).size ===
-      observations.length,
+    unique(steps.map((step) => step.ordinal)),
     'DUPLICATE_STEP_OBSERVATION',
     'Record one original observation per frozen step.',
   );
   invariant(
-    observations.every((step) => step.actual.trim()) &&
+    steps.every((step) => step.actual.trim()) &&
       gaps.every((gap) => gap.label.trim() && gap.reason.trim()),
     'RESULT_EVIDENCE_TEXT_REQUIRED',
     'Step observations and evidence gaps need non-blank text.',
   );
   const evidence = new Set(item.evidenceRefs);
   invariant(
-    observations.every((step) =>
+    steps.every((step) =>
       (step.evidenceRefs ?? []).every((ref) => evidence.has(ref)),
     ),
     'STEP_EVIDENCE_OUTSIDE_RESULT',
     'Step evidence must be referenced by the same original result.',
   );
+  invariant(
+    observations.every((entry) => entry.actual.trim()) &&
+      assertionResults.every(
+        (entry) => entry.reason === undefined || entry.reason.trim(),
+      ),
+    'RESULT_EVIDENCE_TEXT_REQUIRED',
+    'Observations and provided assertion reasons need non-blank text.',
+  );
+  invariant(
+    unique(assertionResults.map((entry) => entry.assertionId)) &&
+      gaps.every((gap) => unique(gap.assertionIds)) &&
+      observations.every(
+        (entry) =>
+          unique(entry.assertionIds) &&
+          unique(entry.stepOrdinals) &&
+          unique(entry.actionOrdinals) &&
+          unique(entry.evidenceRefs),
+      ),
+    'DUPLICATE_OBSERVATION_LINK',
+    'Assertion results and observation links must be unique in their own entry.',
+  );
+  invariant(
+    observations.every((entry) =>
+      (entry.evidenceRefs ?? []).every((ref) => evidence.has(ref)),
+    ),
+    'OBSERVATION_EVIDENCE_OUTSIDE_RESULT',
+    'Observation evidence must be referenced by the same original result.',
+  );
+  invariant(
+    observations.every((entry) =>
+      (entry.actionOrdinals ?? []).every(
+        (ordinal) => ordinal <= (item.actualActions?.length ?? 0),
+      ),
+    ),
+    'ACTION_OUTSIDE_RESULT',
+    'An observation action ordinal must reference an actual action in the same result.',
+  );
   if (fixed) {
     const available = fixed.content.steps?.length ?? 0;
     invariant(
-      observations.every((step) => step.ordinal <= available) &&
+      steps.every((step) => step.ordinal <= available) &&
         gaps.every(
           (gap) => gap.ordinal === undefined || gap.ordinal <= available,
+        ) &&
+        observations.every((entry) =>
+          (entry.stepOrdinals ?? []).every((ordinal) => ordinal <= available),
         ),
       'STEP_OUTSIDE_FROZEN_CASE',
       'Step evidence must point to a frozen UI case step. Older cases can use an unnumbered gap.',
     );
+    const assertionIds = new Set(
+      fixed.content.assertions?.map((entry) => entry.id),
+    );
+    invariant(
+      assertionResults.every((entry) => assertionIds.has(entry.assertionId)) &&
+        gaps.every((gap) =>
+          (gap.assertionIds ?? []).every((id) => assertionIds.has(id)),
+        ) &&
+        observations.every((entry) =>
+          (entry.assertionIds ?? []).every((id) => assertionIds.has(id)),
+        ),
+      'ASSERTION_OUTSIDE_FROZEN_CASE',
+      'Assertion IDs must reference the exact frozen case revision.',
+    );
   }
+}
+function unique(values: readonly unknown[] = []): boolean {
+  return new Set(values).size === values.length;
 }
 export const resultSchema = (
   platformSchema('domain.resultItemSchema') as z.ZodType<ResultItem>
@@ -280,6 +377,24 @@ export function scope(value: unknown): ExecutionScope {
       'SCOPE_CONTEXT_MISMATCH',
       'Fixed item context is inconsistent.',
     );
+  invariant(
+    raw.items.every((item) =>
+      unique(item.content.assertions?.map((entry) => entry.id)),
+    ),
+    'DUPLICATE_CASE_ASSERTION',
+    'Frozen assertion IDs must be unique within the case revision.',
+  );
+  invariant(
+    raw.items.every((item) =>
+      (item.content.assertions ?? []).every(
+        (entry) =>
+          entry.expected.trim() &&
+          (entry.evidenceHint === undefined || entry.evidenceHint.trim()),
+      ),
+    ),
+    'CASE_ASSERTION_TEXT_REQUIRED',
+    'Frozen assertions and provided evidence hints need non-blank text.',
+  );
   return structuredClone(raw);
 }
 export const identitySchema = z.strictObject({
